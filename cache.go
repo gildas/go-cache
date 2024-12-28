@@ -103,6 +103,10 @@ func (cache *Cache[T]) Get(id uuid.UUID) (*T, error) {
 	record := item.(record[T])
 	if record.Expiration > 0 && time.Now().UnixNano() > int64(record.Expiration) {
 		cache.Items.Delete(id)
+		if cache.persistent {
+			filename := filepath.Join(cache.folder, id.String())
+			_ = os.Remove(filename)
+		}
 		return nil, errors.NotFound.With("id", id)
 	}
 	return &record.Item, nil
