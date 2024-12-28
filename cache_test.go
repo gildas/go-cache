@@ -97,14 +97,10 @@ func (user User) GetID() uuid.UUID {
 	return user.ID
 }
 
-func (user User) String() string {
-	return user.Name
-}
-
 func (suite *CacheSuite) TestCanCacheStuff() {
 	cache := cache.New[User]("test")
 	defer func() { _ = cache.Clear() }()
-	user := User{ID: uuid.New(), Name: "Gildas"}
+	user := User{ID: uuid.New(), Name: "Joe"}
 	_ = cache.Set(user)
 
 	cached, err := cache.Get(user.GetID())
@@ -131,7 +127,7 @@ func (suite *CacheSuite) TestShouldFailToGetUnknownStuff() {
 func (suite *CacheSuite) TestCanCacheStuffWithExpiration() {
 	cache := cache.New[User]("test").WithExpiration(250 * time.Millisecond)
 	defer func() { _ = cache.Clear() }()
-	user := User{ID: uuid.New(), Name: "Gildas"}
+	user := User{ID: uuid.New(), Name: "Joe"}
 	_ = cache.Set(user)
 
 	cached, err := cache.Get(user.GetID())
@@ -153,7 +149,7 @@ func (suite *CacheSuite) TestCanCacheStuffWithExpiration() {
 func (suite *CacheSuite) TestCanCacheStuffWithCustomExpiration() {
 	cache := cache.New[User]("test").WithExpiration(250 * time.Millisecond)
 	defer func() { _ = cache.Clear() }()
-	user := User{ID: uuid.New(), Name: "Gildas"}
+	user := User{ID: uuid.New(), Name: "Joe"}
 	_ = cache.SetWithExpiration(user, 750*time.Millisecond)
 
 	cached, err := cache.Get(user.GetID())
@@ -180,7 +176,7 @@ func (suite *CacheSuite) TestCanCacheStuffWithCustomExpiration() {
 
 func (suite *CacheSuite) TestCanCacheStuffWithPersistence() {
 	firstCache := cache.New[User]("test", cache.CacheOptionPersistent)
-	user := User{ID: uuid.New(), Name: "Gildas"}
+	user := User{ID: uuid.New(), Name: "Joe"}
 	err := firstCache.Set(user)
 	suite.Require().NoError(err, "Failed to set cached user: %+v", err)
 
@@ -193,7 +189,7 @@ func (suite *CacheSuite) TestCanCacheStuffWithPersistence() {
 
 func (suite *CacheSuite) TestCanCacheStuffWithPersistenceAndExpiration() {
 	firstCache := cache.New[User]("test", cache.CacheOptionPersistent).WithExpiration(250 * time.Millisecond)
-	user := User{ID: uuid.New(), Name: "Gildas"}
+	user := User{ID: uuid.New(), Name: "Joe"}
 	err := firstCache.Set(user)
 	suite.Require().NoError(err, "Failed to set cached user: %+v", err)
 
@@ -212,4 +208,36 @@ func (suite *CacheSuite) TestCanCacheStuffWithPersistenceAndExpiration() {
 	suite.Require().True(errors.As(err, &detailedError), "Getting a cached user that should have expired did not fail with a detailed error")
 	suite.Assert().Equal("id", detailedError.What)
 	suite.Assert().Equal(user.GetID(), detailedError.Value)
+}
+
+func (suite *CacheSuite) TestCanCacheStuffWithEncryption() {
+	encryptionKey := []byte("@v3ry#S3cr3tK3y!")
+	firstCache := cache.New[User]("test", cache.CacheOptionPersistent).WithEncryptionKey(encryptionKey)
+	user := User{ID: uuid.New(), Name: "Joe"}
+	err := firstCache.Set(user)
+	suite.Require().NoError(err, "Failed to set cached user: %+v", err)
+
+	secondCache := cache.New[User]("test").WithEncryptionKey(encryptionKey)
+	cached, err := secondCache.Get(user.GetID())
+	suite.Require().NoError(err, "Failed to get cached user: %+v", err)
+	suite.Require().NotNil(cached, "Cached User is nil")
+	suite.Assert().Equal(user, *cached, "User and Cached User are different")
+}
+
+func (suite *CacheSuite) TestShouldFailWithInvalidEncyptionKey() {
+	encryptionKey := []byte("@v3ry#S3cr3tK3y!")
+	firstCache := cache.New[User]("test", cache.CacheOptionPersistent).WithEncryptionKey(encryptionKey)
+	user := User{ID: uuid.New(), Name: "Joe"}
+	err := firstCache.Set(user)
+	suite.Require().NoError(err, "Failed to set cached user: %+v", err)
+
+	encryptionKey = []byte("test")
+	secondCache := cache.New[User]("test", cache.CacheOptionPersistent).WithEncryptionKey(encryptionKey)
+	err = secondCache.Set(user)
+	suite.Require().Error(err, "Setting a cached user with an encryption key should have failed")
+
+	thirdCache := cache.New[User]("test", cache.CacheOptionPersistent).WithEncryptionKey(encryptionKey)
+	cached, err := thirdCache.Get(user.GetID())
+	suite.Require().Error(err, "Getting a cached user that should have expired did not fail")
+	suite.Require().Nil(cached, "Cached User is not nil")
 }

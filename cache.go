@@ -1,7 +1,11 @@
 package cache
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,11 +18,12 @@ import (
 
 // Cache is a cache
 type Cache[T core.Identifiable] struct {
-	Name       string
-	Items      sync.Map
-	Expiration time.Duration
-	persistent bool
-	folder     string
+	Name          string
+	Items         sync.Map
+	Expiration    time.Duration
+	persistent    bool
+	folder        string
+	encryptionKey []byte
 }
 
 type CacheOption int
@@ -55,6 +60,15 @@ func (cache *Cache[T]) WithExpiration(expiration time.Duration) *Cache[T] {
 	return cache
 }
 
+// WithEncryptionKey sets the encryption key for the cache
+func (cache *Cache[T]) WithEncryptionKey(key []byte) *Cache[T] {
+	cache.encryptionKey = key
+	cache.persistent = true
+	cache.folder, _ = os.UserCacheDir()
+	cache.folder = filepath.Join(cache.folder, cache.Name)
+	return cache
+}
+
 // Set sets an item in the cache
 func (cache *Cache[T]) Set(item T) (err error) {
 	return cache.SetWithExpiration(item, cache.Expiration)
@@ -76,6 +90,11 @@ func (cache *Cache[T]) SetWithExpiration(item T, expiration time.Duration) (err 
 		if data, err = json.Marshal(r); err == nil {
 			if err = os.MkdirAll(cache.folder, 0700); err == nil {
 				filename := filepath.Join(cache.folder, item.GetID().String())
+				if len(cache.encryptionKey) > 0 {
+					if data, err = cache.encrypt(data); err != nil {
+						return
+					}
+				}
 				err = os.WriteFile(filename, data, 0600)
 			}
 		}
@@ -92,6 +111,11 @@ func (cache *Cache[T]) Get(id uuid.UUID) (*T, error) {
 			if data, err := os.ReadFile(filename); err == nil {
 				var record record[T]
 
+				if len(cache.encryptionKey) > 0 {
+					if data, err = cache.decrypt(data); err != nil {
+						return nil, err
+					}
+				}
 				if err = json.Unmarshal(data, &record); err == nil {
 					cache.Items.Store(id, record)
 					return &record.Item, nil
@@ -122,4 +146,40 @@ func (cache *Cache[T]) Clear() error {
 		return os.RemoveAll(cache.folder)
 	}
 	return nil
+}
+
+// encrypt encrypts data using AES
+func (cache *Cache[T]) encrypt(data []byte) (encrypted []byte, err error) {
+	var block cipher.Block
+
+	if block, err = aes.NewCipher(cache.encryptionKey); err == nil {
+		var gcm cipher.AEAD
+
+		if gcm, err = cipher.NewGCM(block); err == nil {
+			nonce := make([]byte, gcm.NonceSize())
+			if _, err = io.ReadFull(rand.Reader, nonce); err == nil {
+				return gcm.Seal(nonce, nonce, data, nil), nil
+			}
+		}
+	}
+	return nil, err
+}
+
+// decrypt decrypts data using AES
+func (cache *Cache[T]) decrypt(data []byte) (decrypted []byte, err error) {
+	var block cipher.Block
+
+	if block, err = aes.NewCipher(cache.encryptionKey); err == nil {
+		var gcm cipher.AEAD
+
+		if gcm, err = cipher.NewGCM(block); err == nil {
+			nonceSize := gcm.NonceSize()
+			if len(data) >= nonceSize {
+				nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+				return gcm.Open(nil, nonce, ciphertext, nil)
+			}
+			return nil, errors.New("ciphertext too short")
+		}
+	}
+	return nil, err
 }
