@@ -6,7 +6,6 @@ require (
 	github.com/gildas/go-core v0.6.0
 	github.com/gildas/go-errors v0.4.0
 	github.com/gildas/go-logger v1.7.6
-	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/stretchr/testify v1.10.0
