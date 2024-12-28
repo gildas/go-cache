@@ -103,7 +103,7 @@ func (user User) String() string {
 
 func (suite *CacheSuite) TestCanCacheStuff() {
 	cache := cache.New[User]("test")
-	defer cache.Clear()
+	defer func() { _ = cache.Clear() }()
 	user := User{ID: uuid.New(), Name: "Gildas"}
 	_ = cache.Set(user)
 
@@ -115,7 +115,7 @@ func (suite *CacheSuite) TestCanCacheStuff() {
 
 func (suite *CacheSuite) TestShouldFailToGetUnknownStuff() {
 	cache := cache.New[User]("test")
-	defer cache.Clear()
+	defer func() { _ = cache.Clear() }()
 	id := uuid.New()
 
 	cached, err := cache.Get(id)
@@ -130,7 +130,7 @@ func (suite *CacheSuite) TestShouldFailToGetUnknownStuff() {
 
 func (suite *CacheSuite) TestCanCacheStuffWithExpiration() {
 	cache := cache.New[User]("test").WithExpiration(250 * time.Millisecond)
-	defer cache.Clear()
+	defer func() { _ = cache.Clear() }()
 	user := User{ID: uuid.New(), Name: "Gildas"}
 	_ = cache.Set(user)
 
@@ -152,7 +152,7 @@ func (suite *CacheSuite) TestCanCacheStuffWithExpiration() {
 
 func (suite *CacheSuite) TestCanCacheStuffWithCustomExpiration() {
 	cache := cache.New[User]("test").WithExpiration(250 * time.Millisecond)
-	defer cache.Clear()
+	defer func() { _ = cache.Clear() }()
 	user := User{ID: uuid.New(), Name: "Gildas"}
 	_ = cache.SetWithExpiration(user, 750*time.Millisecond)
 
