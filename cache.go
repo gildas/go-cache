@@ -87,7 +87,7 @@ func (cache *Cache[T]) SetWithExpiration(item T, expiration time.Duration, key .
 	if named, ok := any(item).(core.Named); ok {
 		key = append(key, named.GetName())
 	}
-	if len(key)	== 0 {
+	if len(key) == 0 {
 		return errors.ArgumentMissing.With("key")
 	}
 
