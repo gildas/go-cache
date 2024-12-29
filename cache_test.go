@@ -97,10 +97,46 @@ func (user User) GetID() uuid.UUID {
 	return user.ID
 }
 
+// GetName gets the Name of the User
+//
+// implements core.Named
+func (user User) GetName() string {
+	return user.Name
+}
+
+type StringIDUser struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// GetID gets the ID of the User
+//
+// implements core.StringIdentifiable
+func (user StringIDUser) GetID() string {
+	return user.ID
+}
+
+type BogusUser struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
 func (suite *CacheSuite) TestCanCacheStuff() {
 	cache := cache.New[User]("test")
 	defer func() { _ = cache.Clear() }()
 	user := User{ID: uuid.New(), Name: "Joe"}
+	_ = cache.Set(user)
+
+	cached, err := cache.Get(user.GetID().String())
+	suite.Require().NoError(err, "Failed to get cached user: %+v", err)
+	suite.Require().NotNil(cached, "Cached User is nil")
+	suite.Assert().Equal(user, *cached, "User and Cached User are different")
+}
+
+func (suite *CacheSuite) TestCanCacheStuffWithStringID() {
+	cache := cache.New[StringIDUser]("test")
+	defer func() { _ = cache.Clear() }()
+	user := StringIDUser{ID: "1234", Name: "Joe"}
 	_ = cache.Set(user)
 
 	cached, err := cache.Get(user.GetID())
@@ -109,19 +145,21 @@ func (suite *CacheSuite) TestCanCacheStuff() {
 	suite.Assert().Equal(user, *cached, "User and Cached User are different")
 }
 
-func (suite *CacheSuite) TestShouldFailToGetUnknownStuff() {
+func (suite *CacheSuite) TestCanCacheStuffWithKey() {
 	cache := cache.New[User]("test")
 	defer func() { _ = cache.Clear() }()
-	id := uuid.New()
+	user := User{ID: uuid.New(), Name: "Joe"}
+	_ = cache.Set(user, "me")
 
-	cached, err := cache.Get(id)
-	suite.Require().Error(err, "Getting a cached user that should have expired did not fail")
-	suite.Require().Nil(cached, "Cached User is not nil")
-	suite.Assert().ErrorIs(err, errors.NotFound, "Getting a cached user that should have expired did not fail with NotFound but with %+v", err)
-	var detailedError *errors.Error
-	suite.Require().True(errors.As(err, &detailedError), "Getting a cached user that should have expired did not fail with a detailed error")
-	suite.Assert().Equal("id", detailedError.What)
-	suite.Assert().Equal(id, detailedError.Value)
+	cached, err := cache.Get(user.GetID().String())
+	suite.Require().NoError(err, "Failed to get cached user: %+v", err)
+	suite.Require().NotNil(cached, "Cached User is nil")
+	suite.Assert().Equal(user, *cached, "User and Cached User are different")
+
+	cached, err = cache.Get("me")
+	suite.Require().NoError(err, "Failed to get cached user: %+v", err)
+	suite.Require().NotNil(cached, "Cached User is nil")
+	suite.Assert().Equal(user, *cached, "User and Cached User are different")
 }
 
 func (suite *CacheSuite) TestCanCacheStuffWithExpiration() {
@@ -130,20 +168,20 @@ func (suite *CacheSuite) TestCanCacheStuffWithExpiration() {
 	user := User{ID: uuid.New(), Name: "Joe"}
 	_ = cache.Set(user)
 
-	cached, err := cache.Get(user.GetID())
+	cached, err := cache.Get(user.GetID().String())
 	suite.Require().NoError(err, "Failed to get cached user: %+v", err)
 	suite.Require().NotNil(cached, "Cached User is nil")
 	suite.Assert().Equal(user, *cached, "User and Cached User are different")
 
 	time.Sleep(500 * time.Millisecond)
-	cached, err = cache.Get(user.GetID())
+	cached, err = cache.Get(user.GetID().String())
 	suite.Require().Error(err, "Getting a cached user that should have expired did not fail")
 	suite.Require().Nil(cached, "Cached User is not nil")
 	suite.Assert().ErrorIs(err, errors.NotFound, "Getting a cached user that should have expired did not fail with NotFound but with %+v", err)
 	var detailedError *errors.Error
 	suite.Require().True(errors.As(err, &detailedError), "Getting a cached user that should have expired did not fail with a detailed error")
-	suite.Assert().Equal("id", detailedError.What)
-	suite.Assert().Equal(user.GetID(), detailedError.Value)
+	suite.Assert().Equal("key", detailedError.What)
+	suite.Assert().Equal(user.GetID().String(), detailedError.Value)
 }
 
 func (suite *CacheSuite) TestCanCacheStuffWithCustomExpiration() {
@@ -152,26 +190,26 @@ func (suite *CacheSuite) TestCanCacheStuffWithCustomExpiration() {
 	user := User{ID: uuid.New(), Name: "Joe"}
 	_ = cache.SetWithExpiration(user, 750*time.Millisecond)
 
-	cached, err := cache.Get(user.GetID())
+	cached, err := cache.Get(user.GetID().String())
 	suite.Require().NoError(err, "Failed to get cached user: %+v", err)
 	suite.Require().NotNil(cached, "Cached User is nil")
 	suite.Assert().Equal(user, *cached, "User and Cached User are different")
 
 	time.Sleep(500 * time.Millisecond)
-	cached, err = cache.Get(user.GetID())
+	cached, err = cache.Get(user.GetID().String())
 	suite.Require().NoError(err, "Failed to get cached user: %+v", err)
 	suite.Require().NotNil(cached, "Cached User is nil")
 	suite.Assert().Equal(user, *cached, "User and Cached User are different")
 
 	time.Sleep(500 * time.Millisecond)
-	cached, err = cache.Get(user.GetID())
+	cached, err = cache.Get(user.GetID().String())
 	suite.Require().Error(err, "Getting a cached user that should have expired did not fail")
 	suite.Require().Nil(cached, "Cached User is not nil")
 	suite.Assert().ErrorIs(err, errors.NotFound, "Getting a cached user that should have expired did not fail with NotFound but with %+v", err)
 	var detailedError *errors.Error
 	suite.Require().True(errors.As(err, &detailedError), "Getting a cached user that should have expired did not fail with a detailed error")
-	suite.Assert().Equal("id", detailedError.What)
-	suite.Assert().Equal(user.GetID(), detailedError.Value)
+	suite.Assert().Equal("key", detailedError.What)
+	suite.Assert().Equal(user.GetID().String(), detailedError.Value)
 }
 
 func (suite *CacheSuite) TestCanCacheStuffWithPersistence() {
@@ -181,7 +219,7 @@ func (suite *CacheSuite) TestCanCacheStuffWithPersistence() {
 	suite.Require().NoError(err, "Failed to set cached user: %+v", err)
 
 	secondCache := cache.New[User]("test", cache.CacheOptionPersistent)
-	cached, err := secondCache.Get(user.GetID())
+	cached, err := secondCache.Get(user.GetID().String())
 	suite.Require().NoError(err, "Failed to get cached user: %+v", err)
 	suite.Require().NotNil(cached, "Cached User is nil")
 	suite.Assert().Equal(user, *cached, "User and Cached User are different")
@@ -194,20 +232,20 @@ func (suite *CacheSuite) TestCanCacheStuffWithPersistenceAndExpiration() {
 	suite.Require().NoError(err, "Failed to set cached user: %+v", err)
 
 	secondCache := cache.New[User]("test", cache.CacheOptionPersistent).WithExpiration(250 * time.Millisecond)
-	cached, err := secondCache.Get(user.GetID())
+	cached, err := secondCache.Get(user.GetID().String())
 	suite.Require().NoError(err, "Failed to get cached user: %+v", err)
 	suite.Require().NotNil(cached, "Cached User is nil")
 	suite.Assert().Equal(user, *cached, "User and Cached User are different")
 
 	time.Sleep(500 * time.Millisecond)
-	cached, err = secondCache.Get(user.GetID())
+	cached, err = secondCache.Get(user.GetID().String())
 	suite.Require().Error(err, "Getting a cached user that should have expired did not fail")
 	suite.Require().Nil(cached, "Cached User is not nil")
 	suite.Assert().ErrorIs(err, errors.NotFound, "Getting a cached user that should have expired did not fail with NotFound but with %+v", err)
 	var detailedError *errors.Error
 	suite.Require().True(errors.As(err, &detailedError), "Getting a cached user that should have expired did not fail with a detailed error")
-	suite.Assert().Equal("id", detailedError.What)
-	suite.Assert().Equal(user.GetID(), detailedError.Value)
+	suite.Assert().Equal("key", detailedError.What)
+	suite.Assert().Equal(user.GetID().String(), detailedError.Value)
 }
 
 func (suite *CacheSuite) TestCanCacheStuffWithEncryption() {
@@ -218,10 +256,36 @@ func (suite *CacheSuite) TestCanCacheStuffWithEncryption() {
 	suite.Require().NoError(err, "Failed to set cached user: %+v", err)
 
 	secondCache := cache.New[User]("test").WithEncryptionKey(encryptionKey)
-	cached, err := secondCache.Get(user.GetID())
+	cached, err := secondCache.Get(user.GetID().String())
 	suite.Require().NoError(err, "Failed to get cached user: %+v", err)
 	suite.Require().NotNil(cached, "Cached User is nil")
 	suite.Assert().Equal(user, *cached, "User and Cached User are different")
+}
+
+func (suite *CacheSuite) TestShouldFailWithoutKeys() {
+	cache := cache.New[BogusUser]("test", cache.CacheOptionPersistent)
+	user := BogusUser{ID: uuid.New(), Name: "Joe"}
+	err := cache.Set(user)
+	suite.Require().Error(err, "Setting a cached user without a key should have failed")
+	suite.Assert().ErrorIs(err, errors.ArgumentMissing, "Getting a cached user that should have expired did not fail with ArgumentMissing but with %+v", err)
+	var detailedError *errors.Error
+	suite.Require().True(errors.As(err, &detailedError), "Getting a cached user that should have expired did not fail with a detailed error")
+	suite.Assert().Equal("key", detailedError.What)
+}
+
+func (suite *CacheSuite) TestShouldFailToGetUnknownStuff() {
+	cache := cache.New[User]("test")
+	defer func() { _ = cache.Clear() }()
+	id := uuid.New()
+
+	cached, err := cache.Get(id.String())
+	suite.Require().Error(err, "Getting a cached user that should have expired did not fail")
+	suite.Require().Nil(cached, "Cached User is not nil")
+	suite.Assert().ErrorIs(err, errors.NotFound, "Getting a cached user that should have expired did not fail with NotFound but with %+v", err)
+	var detailedError *errors.Error
+	suite.Require().True(errors.As(err, &detailedError), "Getting a cached user that should have expired did not fail with a detailed error")
+	suite.Assert().Equal("key", detailedError.What)
+	suite.Assert().Equal(id.String(), detailedError.Value)
 }
 
 func (suite *CacheSuite) TestShouldFailWithInvalidEncyptionKey() {
@@ -237,7 +301,7 @@ func (suite *CacheSuite) TestShouldFailWithInvalidEncyptionKey() {
 	suite.Require().Error(err, "Setting a cached user with an encryption key should have failed")
 
 	thirdCache := cache.New[User]("test", cache.CacheOptionPersistent).WithEncryptionKey(encryptionKey)
-	cached, err := thirdCache.Get(user.GetID())
+	cached, err := thirdCache.Get(user.GetID().String())
 	suite.Require().Error(err, "Getting a cached user that should have expired did not fail")
 	suite.Require().Nil(cached, "Cached User is not nil")
 }
