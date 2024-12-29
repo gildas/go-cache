@@ -26,13 +26,20 @@ go get github.com/gildas/go-cache
 In the simplest form, you can use the cache like this:
 
 ```go
-cache := cache.New[User("mycache")
+cache := cache.New[User]("mycache")
 err := cache.Set(user)
+err := cache.Set(user, "mykey1", "mykey2", "mykey3")
 ...
 value, err := cache.Get("key")
 ```
 
-Where `User` is a struct that implements [core.Identifiable](https://pkg.go.dev/github.com/gildas/go-core#Identifiable) interface.
+On top of the provided keys in the `Set` method, the cache will check if the `User` struct implements the following interfaces to use as keys (all that apply):
+
+- [core.Identifiable](https://pkg.go.dev/github.com/gildas/go-core#Identifiable),
+- [core.Named](https://pkg.go.dev/github.com/gildas/go-core#Named),
+- [core.StringIdentifiable](https://pkg.go.dev/github.com/gildas/go-core#StringIdentifiable).
+
+**Note:** The keys are case-sensitive.
 
 If the `User` is not found in the cache, the `Get` method will return an error of type [errors.NotFound](https://pkg.go.dev/github.com/gildas/go-errors#NotFound).
 
@@ -45,7 +52,7 @@ cache := cache.New[User("mycache").WithExpiration(10 * time.Minute)
 Or set the expiration time for a specific key:
 
 ```go
-cache := cache.New[User("mycache")
+cache := cache.New[User]("mycache")
 err := cache.SetWithExpiration(user, 10 * time.Minute)
 ```
 
@@ -54,7 +61,7 @@ If the `User` is expired, the `Get` method will return an error of type [errors.
 The cache can be persisted to disk:
 
 ```go
-cache := cache.New[User("mycache", cache.CacheOptionPersistent)
+cache := cache.New[User]("mycache", cache.CacheOptionPersistent)
 ```
 
 The cache files are stored in the [os.UserCacheDir](https://pkg.go.dev/os#UserCacheDir) directory, in a subdirectory named after the cache name.
@@ -62,8 +69,8 @@ The cache files are stored in the [os.UserCacheDir](https://pkg.go.dev/os#UserCa
 The cache can be encrypted:
 
 ```go
-cache := cache.New[User("mycache", cache.CacheOptionPersistent).WithEncryption("mysecret")
-cache := cache.New[User("mycache").WithEncryption("mysecret")
+cache := cache.New[User]("mycache", cache.CacheOptionPersistent).WithEncryption("mysecret")
+cache := cache.New[User]("mycache").WithEncryption("mysecret")
 ```
 
 Setting the encryption key turns on the persistent option automatically.

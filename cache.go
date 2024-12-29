@@ -17,7 +17,7 @@ import (
 )
 
 // Cache is a cache
-type Cache[T core.Identifiable] struct {
+type Cache[T interface{}] struct {
 	Name          string
 	Items         sync.Map
 	Expiration    time.Duration
@@ -35,13 +35,13 @@ const (
 	CacheOptionPersistent
 )
 
-type record[T core.Identifiable] struct {
+type record[T interface{}] struct {
 	Item       T
 	Expiration uint64
 }
 
 // New creates a new Cache
-func New[T core.Identifiable](name string, option ...CacheOption) *Cache[T] {
+func New[T any](name string, option ...CacheOption) *Cache[T] {
 	cache := &Cache[T]{Name: name}
 	for _, opt := range option {
 		switch opt {
@@ -70,32 +70,48 @@ func (cache *Cache[T]) WithEncryptionKey(key []byte) *Cache[T] {
 }
 
 // Set sets an item in the cache
-func (cache *Cache[T]) Set(item T) (err error) {
-	return cache.SetWithExpiration(item, cache.Expiration)
+func (cache *Cache[T]) Set(item T, key ...string) (err error) {
+	return cache.SetWithExpiration(item, cache.Expiration, key...)
 }
 
 // SetWithExpiration sets an item in the cache with a custom expiration
-func (cache *Cache[T]) SetWithExpiration(item T, expiration time.Duration) (err error) {
+func (cache *Cache[T]) SetWithExpiration(item T, expiration time.Duration, key ...string) (err error) {
 	var r record[T]
+
+	if identifiable, ok := any(item).(core.Identifiable); ok {
+		key = append(key, identifiable.GetID().String())
+	}
+	if identifiable, ok := any(item).(core.StringIdentifiable); ok {
+		key = append(key, identifiable.GetID())
+	}
+	if named, ok := any(item).(core.Named); ok {
+		key = append(key, named.GetName())
+	}
+	if len(key)	== 0 {
+		return errors.ArgumentMissing.With("key")
+	}
 
 	if expiration == 0 {
 		r = record[T]{Item: item} // The Record does not expire
 	} else {
 		r = record[T]{Item: item, Expiration: uint64(time.Now().Add(expiration).UnixNano())}
 	}
-	cache.Items.Store(item.GetID(), r)
-	if cache.persistent {
-		var data []byte
+	for _, k := range key {
+		cache.Items.Store(k, r)
+		if cache.persistent {
+			var data []byte
 
-		if data, err = json.Marshal(r); err == nil {
-			if err = os.MkdirAll(cache.folder, 0700); err == nil {
-				filename := filepath.Join(cache.folder, item.GetID().String())
-				if len(cache.encryptionKey) > 0 {
-					if data, err = cache.encrypt(data); err != nil {
-						return
+			if data, err = json.Marshal(r); err == nil {
+				if err = os.MkdirAll(cache.folder, 0700); err == nil {
+					k = uuid.NewSHA1(uuid.Nil, []byte(k)).String()
+					filename := filepath.Join(cache.folder, k)
+					if len(cache.encryptionKey) > 0 {
+						if data, err = cache.encrypt(data); err != nil {
+							return
+						}
 					}
+					err = os.WriteFile(filename, data, 0600)
 				}
-				err = os.WriteFile(filename, data, 0600)
 			}
 		}
 	}
@@ -103,11 +119,12 @@ func (cache *Cache[T]) SetWithExpiration(item T, expiration time.Duration) (err 
 }
 
 // Get gets an item from the cache
-func (cache *Cache[T]) Get(id uuid.UUID) (*T, error) {
-	item, found := cache.Items.Load(id)
+func (cache *Cache[T]) Get(key string) (*T, error) {
+	item, found := cache.Items.Load(key)
 	if !found {
 		if cache.persistent {
-			filename := filepath.Join(cache.folder, id.String())
+			filekey := uuid.NewSHA1(uuid.Nil, []byte(key)).String()
+			filename := filepath.Join(cache.folder, filekey)
 			if data, err := os.ReadFile(filename); err == nil {
 				var record record[T]
 
@@ -117,21 +134,21 @@ func (cache *Cache[T]) Get(id uuid.UUID) (*T, error) {
 					}
 				}
 				if err = json.Unmarshal(data, &record); err == nil {
-					cache.Items.Store(id, record)
+					cache.Items.Store(key, record)
 					return &record.Item, nil
 				}
 			}
 		}
-		return nil, errors.NotFound.With("id", id)
+		return nil, errors.NotFound.With("key", key)
 	}
 	record := item.(record[T])
 	if record.Expiration > 0 && time.Now().UnixNano() > int64(record.Expiration) {
-		cache.Items.Delete(id)
+		cache.Items.Delete(key)
 		if cache.persistent {
-			filename := filepath.Join(cache.folder, id.String())
+			filename := filepath.Join(cache.folder, key)
 			_ = os.Remove(filename)
 		}
-		return nil, errors.NotFound.With("id", id)
+		return nil, errors.NotFound.With("key", key)
 	}
 	return &record.Item, nil
 }
