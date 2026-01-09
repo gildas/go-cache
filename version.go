@@ -4,4 +4,4 @@ package cache
 var commit string
 
 // VERSION is the version of this library
-var VERSION = "0.2.0" + commit
+var VERSION = "0.2.1" + commit
