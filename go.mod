@@ -1,6 +1,6 @@
 module github.com/gildas/go-cache
 
-go 1.23.4
+go 1.25
 
 require (
 	github.com/gildas/go-core v0.6.0
